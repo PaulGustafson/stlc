@@ -15,21 +15,25 @@ data Ty                           -- types
 
 data TExp v                       -- typed expressions
   = TVar v Ty
-  | TLit Bool Atom
+  | TLit Bool 
   | TLam v (TExp v) Ty Ty
   | TApp (TExp v) (TExp v) Ty
 
 
 data PExp v                       -- partially typed expression
   = PVar v (Maybe Ty)
-  | PLit Bool Atom
+  | PLit Bool 
   | PLam v (PExp v) (Maybe Ty) (Maybe Ty)
   | PApp (TExp v) (TExp v) (Maybe Ty)
 
 
-type Context v b = v -> Maybe (TyA b)
+type Context v b = v -> Maybe Ty
 
-type Failable t = Either t String
+type Error = String
+
+type Failable t = Either t Error
+
+
 
 
 
@@ -42,7 +46,7 @@ type Failable t = Either t String
 
 
 
--- append :: Eq v => (v, TyA b) ->  Context v b -> Context v b
+-- append :: Eq v => (v, TyA) ->  Context v -> Context v
 -- append h c = \ x -> case (c x) of
 --   Just a -> Just a
 --   Nothing -> if x == fst h
