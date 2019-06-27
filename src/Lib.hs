@@ -1,9 +1,10 @@
 module Lib where
 
+type IBool = Bool                 -- internal bool
 
 data UExp v                       -- untyped expression of variable type v
   = UVar v                        -- variable
-  | ULit Bool                     -- literal
+  | ULit IBool                     -- literal
   | ULam v (UExp v)               -- lambda
   | UApp (UExp v) (UExp v)        -- apply
   deriving (Show)
@@ -15,7 +16,7 @@ data Ty                           -- types
 
 data TExp v                       -- typed expressions
   = TVar v Ty
-  | TLit Bool 
+  | TLit IBool 
   | TLam v (TExp v) Ty Ty
   | TApp (TExp v) (TExp v) Ty
 
@@ -27,15 +28,11 @@ data PExp v                       -- partially typed expression
   | PApp (TExp v) (TExp v) (Maybe Ty)
 
 
-type Context v b = v -> Maybe Ty
+type Context v = v -> Maybe Ty
 
 type Error = String
 
 type Failable t = Either t Error
-
-
-
-
 
 -- type Exp = ExpA String 
 
@@ -45,13 +42,30 @@ type Failable t = Either t Error
 --     show (App e1 e2) = "(" + (show e1) +") (" + (show e2) + ")"
 
 
+insert :: Eq v => (v, Ty) ->  Context v -> Context v
+insert h c = \ x ->
+  if x == fst h
+  then Just (snd h)
+  else c x
 
--- append :: Eq v => (v, TyA) ->  Context v -> Context v
--- append h c = \ x -> case (c x) of
---   Just a -> Just a
---   Nothing -> if x == fst h
---     then Just (snd h)
---     else Nothing
+
+typeof :: TExp v -> Ty
+typeof (TVar x t) = t
+typeof (TLit _) = Atom
+typeof (TLam _ _ a b) = Fun a b
+typeof (TApp _ _ t) = t
+
+
+check :: Eq v => Context v -> TExp v -> Bool
+check c (TVar x t) = case c x of
+  Just t2 -> t2 == t
+  Nothing -> True
+check c (TLit _) = True
+check c (TLam x e a b) = check (insert (x, a) c) e
+check c (TApp f x z) = case f of
+  TLam y e a b -> (a == typeof x) && (b == z) && (check c f) && (check c x)
+  _ -> False
+
 
 
 -- -- Ascribes as many types as possible, given a context
@@ -94,23 +108,6 @@ type Failable t = Either t Error
 -- synth (Asc x y) = case (check x y) of
 --   True -> Just y
 --   False -> Nothing
-
--- check :: ExpA v b -> TyA b -> Bool
--- check (Var x) y = True
--- check (Lit x) y = case y of 
---      Atom -> True
---      _    -> False
--- check (Lam x e) y = case y of
---      Fun a c -> check e c 
---      _       -> False
--- check (App x y) z = case x of
---      Lam w e -> case (synth x) of
---        Just f -> case f of
---          Fun a c -> (check y a) && (c == z)
---          _       -> False
---        _       -> False
---      _       -> False
--- check (Asc x y) z = y == z
 
 -- TODO: replace == with unification
 -- TODO: Use dependent types to replace bool with a base type enumeration
