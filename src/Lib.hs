@@ -4,48 +4,48 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Monad.State.Lazy
 
-data Ty                           -- types
-  = Atom 
-  | Fun Ty Ty
+data Ty t                          -- type on a base type enumeration $t$
+  = Atom t
+  | Fun (Ty t) (Ty t)
   deriving (Show, Eq)
 
-type Asc e t = (e, t)             -- ascription of expression to type
+type Asc e t  = (e, Ty t)             -- ascription of expression to type
 
-newtype IBool = IBool Bool        -- internal bool
+type Checker e t = e -> t -> Bool
+
+  
+data TExp v t e 
+  -- typed expressions of variable type v, base type t, base expression type e
+  = TLit e t 
+  | TVar (Asc v t)
+  | TLam (Asc v t)  (Asc (TExp v t e) t)
+  | TApp (Asc (TExp v t e, TExp v t e) t)
 
 
+type Context v t = v -> Maybe (Ty t)
 
-data TExp v                       -- typed expressions
-  = TVar (Asc v Ty)
-  | TLit IBool 
-  | TLam (Asc v Ty)  (Asc (TExp v) Ty)
-  | TApp (Asc ((TExp v) (TExp v)) Ty)
+data PAtom t                        -- atomic partial types
+  = Full (Ty t)
+  | Hole 
 
-type Context v = v -> Maybe Ty
+type PTy t = Ty (PAtom t)           -- partial types
 
-data PTy                          -- partially defined types
-  = FullT Ty
-  | Hole
-  | PAtom
-  | PFun PTy PTy
-  deriving (Show)
+type PExp v t e = TExp v (PAtom t) e  -- partially typed expressions
 
-data PExp v                       -- partially typed expression
-  = FullE (TExp v)
-  | PLit IBool
-  | PVar v PTy
-  | PLam v PTy (PExp v) PTy
-  | PApp (PExp v) (PExp v) PTy
+data IType = TBool 
+newtype IBool = IBool Bool           -- internal bool
 
-type PContext v = v -> PTy
+newtype Var = Var String
+
+type PContext v t = v -> PTy t
 
 type Error = String
 
 type Failable = Either Error
 
-type FComp v = StateT (PContext v) Failable   -- failable partial context
+type FComp v t = StateT (PContext v t) Failable   -- failable partial context
 
--- type Exp = ExpA String 
+type Exp = TExp String IType IBool 
 
 -- instance Show Exp where
 --     show (Var s) = s
@@ -54,88 +54,108 @@ type FComp v = StateT (PContext v) Failable   -- failable partial context
 
 
 
-reifyT :: PTy -> Maybe Ty
-reifyT (FullT t) = Just t
-reifyT Hole = Nothing
-reifyT PAtom = Just PAtom
-reifyT (PFun pa pb) = liftM2 Fun (reifyT pa) (reifyT pb)
-
--- no FullT output
-unreifyT :: Ty -> PTy
-unreifyT Atom = PAtom
-unreifyT (Fun a b) = PFun (unreifyT a) (unreifyT b)
-
-reifyE :: PExp v -> Maybe (TExp v)
-reifyE (FullE e) = Just e
-reifyE (PLit b) = Just $ TLit b
-reifyE (PVar x pt) = liftM (TVar x) (reifyT pt)
-reifyE (PLam x pt1 e pt2) = liftM3 (TLam x) (reifyT pt1) (reifyE e) (reifyT pt2)
-reifyE (PApp e1 e2 pt) = liftM3 TApp (reifyE e1) (reifyE e2) (reifyT pt)
-
--- no FullE output
-unreifyE :: TExp v -> PExp v
-unreifyE (TVar x t) = PVar x (FullT t)
-unreifyE TLit b = PLit b
-unreifyE TLam x a e b = PLam (PVa
+-- reifyT :: PTy t -> Maybe (Ty t)
+-- reifyT (Atom Hole) = Nothing
+-- reifyT (Atom (Full x)) = Just x
+-- reifyT (Fun a b) = liftM2 Fun (reifyT a) (reifyT b)
 
 
-insert :: Eq v => (v, Ty) -> Context v -> Context v
+-- unreifyT :: Ty t -> PTy t
+-- unreifyT x = Atom (Full x)
+
+-- reifyA :: Asc e (PAtom t) -> Maybe (Asc e t)
+-- reifyA (exp, pty) =
+--   case pty of
+--     Atom pAtom -> case pAtom of
+--       Hole -> Nothing
+--       Full ty -> Just (exp, ty)
+--     Fun a b -> 
+
+
+-- reifyE :: PExp v t e -> Maybe (TExp v t e)
+-- reifyE (TLit pExp pAtom) =
+--   case pAtom of
+--     Hole -> Nothing
+--     Full ty -> case ty of
+--       Atom atomicType -> Just $ TLit pExp atomicType
+--       Fun a b -> case pExp of
+--         TLam x e2 -> Just $ TLam 
+  
+  
+
+-- reifyE :: PExp v -> Maybe (TExp v)
+-- reifyE (FullE e) = Just e
+-- reifyE (PLit b) = Just $ TLit b
+-- reifyE (PVar x pt) = liftM (TVar x) (reifyT pt)
+-- reifyE (PLam x pt1 e pt2) = liftM3 (TLam x) (reifyT pt1) (reifyE e) (reifyT pt2)
+-- reifyE (PApp e1 e2 pt) = liftM3 TApp (reifyE e1) (reifyE e2) (reifyT pt)
+
+-- -- no FullE output
+-- unreifyE :: TExp v -> PExp v
+-- unreifyE (TVar x t) = PVar x (FullT t)
+-- unreifyE TLit b = PLit b
+-- unreifyE TLam x a e b = PLam (PVar 
+
+
+insert :: Eq v => (v, Ty t) -> Context v t -> Context v t
 insert h c = \ x ->
   if x == fst h
   then Just (snd h)
   else c x
 
-insertP :: Eq v => (v, PTy) -> PContext v -> PContext v
-insertP h c = \ x ->
-  if x == fst h
-  then snd h
-  else c x
+-- insertP :: Eq v => (v, PTy) -> PContext v -> PContext v
+-- insertP h c = \ x ->
+--   if x == fst h
+--   then snd h
+--   else c x
 
 
-typeof :: TExp v -> Ty
-typeof (TVar x t) = t
-typeof (TLit _) = Atom
-typeof (TLam _ a _ b) = Fun a b
-typeof (TApp _ _ t) = t
+typeof :: TExp v t e -> Ty t
+typeof (TLit exp ty) = Atom ty
+typeof (TVar (x, ty)) = ty
+typeof (TLam (x, t1) (exp, t2)) = Fun t1 t2
+typeof (TApp (_, ty)) = ty
 
 
-check :: Eq v => Context v -> TExp v -> Bool
-check c (TVar x t) = case c x of
-  Just t2 -> t2 == t
-  Nothing -> True
-check c (TLit _) = True
-check c (TLam x a e b) = check (insert (x, a) c) e
-check c (TApp e1 e2 t) = case e1 of
-  TLam x a e3 b -> (a == typeof e2) && (b == t) && (check c e1) && (check c e2)
-  _ -> False
+check :: (Eq t, Eq v) => Checker e t -> Context v t -> TExp v t e -> Bool
+check ch con texp = case texp of
+  TLit exp ty -> ch exp ty
+  TVar (x, ty) -> case con x of
+    Just t2 -> t2 == ty
+    Nothing -> True
+  TLam (x, t1) (exp, t2) -> check ch (insert (x, t1) con) exp
+  TApp ((e1, e2), ty) -> case e1 of
+    TLam (x, a) (e3, b) -> (a == typeof e2) && (b == ty) && (check ch con e1) && (check ch con e2)
+    _ -> False
 
 
-unify :: PTy -> PTy -> Failable PTy
-unify (FullT t) x = case unify (unreifyT t) x of
-  Left err -> throwError err
-  Right t2 -> Right $ FullT t
-unify Hole x = Right x
-unify (PFun a b) x = case unifyFun a b x of
-  Left err -> Left err
-  Right (a2, b2) -> case (a2,b2) of
-    (FullT a3, FullT b3) -> Right $ FullT $ Fun a3 b3
-    _                    -> Right $ PFun a2 b2
+
+-- unify :: PTy -> PTy -> Failable PTy
+-- unify (FullT t) x = case unify (unreifyT t) x of
+--   Left err -> throwError err
+--   Right t2 -> Right $ FullT t
+-- unify Hole x = Right x
+-- unify (PFun a b) x = case unifyFun a b x of
+--   Left err -> Left err
+--   Right (a2, b2) -> case (a2,b2) of
+--     (FullT a3, FullT b3) -> Right $ FullT $ Fun a3 b3
+--     _                    -> Right $ PFun a2 b2
   
 
-unifyFun :: PTy -> PTy -> PTy -> Failable (PTy, PTy)
-unifyFun a b t = case t of
-  Hole -> Right (a, b)
-  PFun a2 b2 -> liftM2 (,) (unify a a2) (unify b b2)
-  FullT t1 -> case t1 of
-    Atom -> throwError $ "Can't unify " ++ (show $ PFun a b) ++ " with atom"
-    Fun a2 b2 ->  liftM2 (,) (unify a (FullT a2)) (unify b (FullT b2))
+-- unifyFun :: PTy -> PTy -> PTy -> Failable (PTy, PTy)
+-- unifyFun a b t = case t of
+--   Hole -> Right (a, b)
+--   PFun a2 b2 -> liftM2 (,) (unify a a2) (unify b b2)
+--   FullT t1 -> case t1 of
+--     Atom -> throwError $ "Can't unify " ++ (show $ PFun a b) ++ " with atom"
+--     Fun a2 b2 ->  liftM2 (,) (unify a (FullT a2)) (unify b (FullT b2))
 
 
-ascribe :: (Eq v, Show v) => PContext v -> PExp v -> (Failable (PExp v), PContext v)
-ascribe c fe@(FullE e) = ascribe c (unreifyE e)
-ascribe c (PVar x t) = case (unify (c x) t) of
-  Left err -> (throwError err, insertP (x, Hole) c)
-  Right t2 -> (Right (PVar x t2), insertP (x, t2) c)
+-- ascribe :: (Eq v, Show v) => PContext v -> PExp v -> (Failable (PExp v), PContext v)
+-- ascribe c fe@(FullE e) = ascribe c (unreifyE e)
+-- ascribe c (PVar x t) = case (unify (c x) t) of
+--   Left err -> (throwError err, insertP (x, Hole) c)
+--   Right t2 -> (Right (PVar x t2), insertP (x, t2) c)
 -- ascribe c (PLam x a e b) =
 --   let c2 = insertP (x, a) c
   
